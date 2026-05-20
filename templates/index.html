@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digit Recognition — CodeAlpha</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #13131a;
+      --surface2:  #1c1c28;
+      --border:    #2a2a3d;
+      --accent:    #7c6bff;
+      --accent2:   #ff6b9d;
+      --green:     #00e5a0;
+      --text:      #e8e8f0;
+      --muted:     #6b6b8a;
+      --canvas-bg: #0e0e16;
+    }
+
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0; opacity: 0.4;
+    }
+
+    /* ── Grid bg lines ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.3;
+      pointer-events: none; z-index: 0;
+    }
+
+    .page { position: relative; z-index: 1; min-height: 100vh; padding: 2rem 1rem; display: flex; flex-direction: column; align-items: center; }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+      animation: fadeDown 0.6s ease both;
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 2px;
+      padding: 4px 12px;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #fff 0%, var(--accent) 60%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.95rem;
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      width: 100%;
+      max-width: 900px;
+      animation: fadeUp 0.7s 0.15s ease both;
+    }
+
+    @media (max-width: 680px) {
+      .main { grid-template-columns: 1fr; }
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    .card-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Canvas ── */
+    .canvas-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    #drawCanvas {
+      background: var(--canvas-bg);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      cursor: crosshair;
+      touch-action: none;
+      transition: border-color 0.2s;
+      display: block;
+      width: 100%;
+      max-width: 280px;
+      aspect-ratio: 1;
+    }
+
+    #drawCanvas:hover { border-color: var(--accent); }
+    #drawCanvas.drawing { border-color: var(--accent); box-shadow: 0 0 20px rgba(124,107,255,0.2); }
+
+    .canvas-hint {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .btn-row { display: flex; gap: 0.75rem; width: 100%; justify-content: center; flex-wrap: wrap; }
+
+    button {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.02em;
+    }
+
+    .btn-predict {
+      background: var(--accent);
+      color: #fff;
+      flex: 1;
+    }
+    .btn-predict:hover { background: #9585ff; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(124,107,255,0.35); }
+    .btn-predict:active { transform: translateY(0); }
+    .btn-predict:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-clear {
+      background: var(--surface2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .btn-clear:hover { color: var(--text); border-color: var(--accent2); }
+
+    /* ── Result panel ── */
+    .result-panel { display: flex; flex-direction: column; gap: 1.25rem; }
+
+    .big-result {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 1.25rem;
+      background: var(--surface2);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      min-height: 90px;
+    }
+
+    .digit-display {
+      font-size: 4rem;
+      font-weight: 800;
+      font-family: 'Space Mono', monospace;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      min-width: 60px;
+      text-align: center;
+      transition: all 0.3s;
+    }
+
+    .digit-display.idle { background: none; -webkit-text-fill-color: var(--border); font-size: 3rem; }
+
+    .result-info { flex: 1; }
+    .result-label { font-family: 'Space Mono', monospace; font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .confidence-val { font-size: 1.4rem; font-weight: 800; color: var(--green); }
+    .confidence-val.idle { color: var(--muted); font-size: 1rem; font-weight: 400; }
+
+    /* ── Confidence bar ── */
+    .conf-bar-wrap { width: 100%; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+    .conf-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 2px; transition: width 0.5s cubic-bezier(0.4,0,0.2,1); width: 0%; }
+
+    /* ── Top 3 ── */
+    .top3-title { font-family: 'Space Mono', monospace; font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem; }
+
+    .top3-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .top3-item {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0.85rem;
+      background: var(--surface2);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      transition: border-color 0.2s;
+    }
+    .top3-item.top { border-color: var(--accent); background: rgba(124,107,255,0.08); }
+
+    .top3-digit {
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: 1.1rem;
+      width: 24px;
+      text-align: center;
+      color: var(--accent);
+    }
+    .top3-item.top .top3-digit { color: var(--accent2); }
+
+    .top3-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .top3-bar { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); width: 0%; }
+    .top3-item.top .top3-bar { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+    .top3-pct { font-family: 'Space Mono', monospace; font-size: 0.75rem; color: var(--muted); min-width: 42px; text-align: right; }
+
+    /* ── All digits probability grid ── */
+    .prob-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; margin-top: 0.25rem; }
+
+    .prob-cell {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.4rem;
+      text-align: center;
+      transition: all 0.3s;
+    }
+    .prob-cell.active { border-color: var(--accent); background: rgba(124,107,255,0.1); }
+
+    .prob-cell-digit { font-family: 'Space Mono', monospace; font-size: 0.9rem; font-weight: 700; color: var(--muted); }
+    .prob-cell.active .prob-cell-digit { color: var(--accent); }
+    .prob-cell-val { font-size: 0.65rem; color: var(--muted); margin-top: 2px; font-family: 'Space Mono', monospace; }
+
+    /* ── Loading spinner ── */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    .predicting .spinner { display: inline-block; }
+    .predicting .btn-text { display: none; }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 2.5rem;
+      text-align: center;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--muted);
+      animation: fadeUp 0.8s 0.3s ease both;
+    }
+    footer span { color: var(--accent); }
+
+    /* ── Stats row ── */
+    .stats-row {
+      display: flex;
+      gap: 1rem;
+      width: 100%;
+      max-width: 900px;
+      margin-bottom: 0;
+      animation: fadeUp 0.65s 0.1s ease both;
+    }
+
+    .stat-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .stat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); flex-shrink: 0; }
+    .stat-dot.purple { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+    .stat-dot.pink { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+    .stat-text { font-family: 'Space Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+    .stat-text strong { color: var(--text); display: block; font-size: 0.85rem; }
+
+    /* ── Animations ── */
+    @keyframes fadeDown { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(20px);  } to { opacity:1; transform:translateY(0); } }
+    @keyframes spin     { to { transform: rotate(360deg); } }
+    @keyframes popIn    { 0% { transform:scale(0.7); opacity:0; } 60% { transform:scale(1.1); } 100% { transform:scale(1); opacity:1; } }
+    .pop { animation: popIn 0.35s cubic-bezier(0.4,0,0.2,1) both; }
+
+    /* ── Brush size ── */
+    .brush-row { display:flex; align-items:center; gap:0.75rem; margin-top: 0.5rem; }
+    .brush-label { font-family:'Space Mono',monospace; font-size:0.65rem; color:var(--muted); white-space:nowrap; }
+    input[type=range] {
+      flex:1; -webkit-appearance:none; background:var(--border);
+      height:4px; border-radius:2px; outline:none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance:none; width:14px; height:14px;
+      border-radius:50%; background:var(--accent); cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header>
+    <div class="badge">CodeAlpha · ML Internship</div>
+    <h1>Digit Recognition</h1>
+    <p class="subtitle">Draw any digit 0–9 · CNN · 99.56% accuracy</p>
+  </header>
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-chip">
+      <div class="stat-dot"></div>
+      <div class="stat-text"><strong>99.56%</strong>Test Accuracy</div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-dot purple"></div>
+      <div class="stat-text"><strong>60,000</strong>Training Images</div>
+    </div>
+    <div class="stat-chip">
+      <div class="stat-dot pink"></div>
+      <div class="stat-text"><strong>438K</strong>Parameters</div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="main">
+
+    <!-- Left: Drawing Canvas -->
+    <div class="card">
+      <div class="card-label">✦ Draw Here</div>
+      <div class="canvas-wrap">
+        <canvas id="drawCanvas" width="280" height="280"></canvas>
+        <p class="canvas-hint">Draw a digit with your mouse or finger</p>
+
+        <!-- Brush size -->
+        <div class="brush-row" style="width:100%;max-width:280px">
+          <span class="brush-label">Brush</span>
+          <input type="range" id="brushSize" min="8" max="32" value="18" />
+          <span class="brush-label" id="brushVal">18px</span>
+        </div>
+
+        <div class="btn-row" style="width:100%;max-width:280px">
+          <button class="btn-predict" id="predictBtn" onclick="predict()">
+            <span class="btn-text">Predict →</span>
+            <span class="spinner" id="spinner"></span>
+          </button>
+          <button class="btn-clear" onclick="clearCanvas()">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Results -->
+    <div class="card result-panel">
+      <div class="card-label">✦ Prediction</div>
+
+      <!-- Big result -->
+      <div class="big-result">
+        <div class="digit-display idle" id="digitDisplay">?</div>
+        <div class="result-info">
+          <div class="result-label">Confidence</div>
+          <div class="confidence-val idle" id="confVal">Draw &amp; predict</div>
+          <div class="conf-bar-wrap"><div class="conf-bar" id="confBar"></div></div>
+        </div>
+      </div>
+
+      <!-- Top 3 -->
+      <div>
+        <div class="top3-title">Top 3 Predictions</div>
+        <div class="top3-list" id="top3List">
+          <div class="top3-item" style="opacity:0.4">
+            <div class="top3-digit">—</div>
+            <div class="top3-bar-wrap"><div class="top3-bar"></div></div>
+            <div class="top3-pct">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- All probabilities grid -->
+      <div>
+        <div class="top3-title">All Digit Probabilities</div>
+        <div class="prob-grid" id="probGrid">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Built with <span>TensorFlow/Keras</span> · MNIST Dataset · <span>Flask</span> · CodeAlpha Internship
+  </footer>
+</div>
+
+<script>
+  // ── Canvas setup ──────────────────────────────────────
+  const canvas  = document.getElementById('drawCanvas');
+  const ctx     = canvas.getContext('2d');
+  let isDrawing = false;
+  let lastX = 0, lastY = 0;
+
+  // Init canvas
+  ctx.fillStyle = '#0e0e16';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineJoin    = 'round';
+  ctx.lineCap     = 'round';
+  ctx.lineWidth   = 18;
+
+  // Brush size
+  const brushSlider = document.getElementById('brushSize');
+  const brushVal    = document.getElementById('brushVal');
+  brushSlider.addEventListener('input', () => {
+    ctx.lineWidth = brushSlider.value;
+    brushVal.textContent = brushSlider.value + 'px';
+  });
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width  / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if (e.touches) {
+      return [
+        (e.touches[0].clientX - rect.left) * scaleX,
+        (e.touches[0].clientY - rect.top)  * scaleY
+      ];
+    }
+    return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    isDrawing = true;
+    [lastX, lastY] = getPos(e);
+    canvas.classList.add('drawing');
+    // Draw a dot on click
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, ctx.lineWidth/2, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+  }
+
+  function draw(e) {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const [x, y] = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    [lastX, lastY] = [x, y];
+  }
+
+  function stopDraw(e) {
+    e.preventDefault();
+    if (isDrawing) { isDrawing = false; canvas.classList.remove('drawing'); }
+  }
+
+  canvas.addEventListener('mousedown',  startDraw);
+  canvas.addEventListener('mousemove',  draw);
+  canvas.addEventListener('mouseup',    stopDraw);
+  canvas.addEventListener('mouseleave', stopDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive:false });
+  canvas.addEventListener('touchmove',  draw,      { passive:false });
+  canvas.addEventListener('touchend',   stopDraw,  { passive:false });
+
+  function clearCanvas() {
+    ctx.fillStyle = '#0e0e16';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    resetUI();
+  }
+
+  // ── Init prob grid ────────────────────────────────────
+  const probGrid = document.getElementById('probGrid');
+  for (let i = 0; i < 10; i++) {
+    probGrid.innerHTML += `
+      <div class="prob-cell" id="cell${i}">
+        <div class="prob-cell-digit">${i}</div>
+        <div class="prob-cell-val" id="cellVal${i}">—</div>
+      </div>`;
+  }
+
+  // ── Predict ───────────────────────────────────────────
+  async function predict() {
+    const btn = document.getElementById('predictBtn');
+    btn.disabled = true;
+    btn.classList.add('predicting');
+
+    try {
+      const imageData = canvas.toDataURL('image/png');
+      const res  = await fetch('/predict', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ image: imageData })
+      });
+
+      const data = await res.json();
+      if (data.error) { alert('Error: ' + data.error); return; }
+
+      updateUI(data);
+    } catch(err) {
+      alert('Could not connect to server: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('predicting');
+    }
+  }
+
+  function updateUI(data) {
+    // Big digit
+    const digitEl = document.getElementById('digitDisplay');
+    digitEl.textContent = data.predicted;
+    digitEl.classList.remove('idle', 'pop');
+    void digitEl.offsetWidth; // reflow
+    digitEl.classList.add('pop');
+
+    // Confidence
+    const confEl  = document.getElementById('confVal');
+    confEl.textContent = data.confidence.toFixed(1) + '%';
+    confEl.classList.remove('idle');
+
+    const confBar = document.getElementById('confBar');
+    setTimeout(() => { confBar.style.width = data.confidence + '%'; }, 50);
+
+    // Top 3
+    const list = document.getElementById('top3List');
+    list.innerHTML = '';
+    data.top3.forEach((item, i) => {
+      list.innerHTML += `
+        <div class="top3-item ${i===0?'top':''}">
+          <div class="top3-digit">${item.digit}</div>
+          <div class="top3-bar-wrap">
+            <div class="top3-bar" style="width:0%" data-w="${item.prob}"></div>
+          </div>
+          <div class="top3-pct">${item.prob.toFixed(1)}%</div>
+        </div>`;
+    });
+    // Animate bars
+    setTimeout(() => {
+      list.querySelectorAll('.top3-bar').forEach(b => {
+        b.style.width = b.dataset.w + '%';
+      });
+    }, 60);
+
+    // Prob grid
+    data.all_probabilities.forEach((p, i) => {
+      const cell    = document.getElementById('cell' + i);
+      const cellVal = document.getElementById('cellVal' + i);
+      cellVal.textContent = p.toFixed(1) + '%';
+      cell.classList.toggle('active', i === data.predicted);
+    });
+  }
+
+  function resetUI() {
+    document.getElementById('digitDisplay').textContent = '?';
+    document.getElementById('digitDisplay').className = 'digit-display idle';
+    document.getElementById('confVal').textContent = 'Draw & predict';
+    document.getElementById('confVal').className = 'confidence-val idle';
+    document.getElementById('confBar').style.width = '0%';
+    document.getElementById('top3List').innerHTML = `
+      <div class="top3-item" style="opacity:0.4">
+        <div class="top3-digit">—</div>
+        <div class="top3-bar-wrap"><div class="top3-bar"></div></div>
+        <div class="top3-pct">—</div>
+      </div>`;
+    for (let i = 0; i < 10; i++) {
+      document.getElementById('cell'+i).classList.remove('active');
+      document.getElementById('cellVal'+i).textContent = '—';
+    }
+  }
+
+  // Keyboard shortcut: Enter = predict, Escape = clear
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  predict();
+    if (e.key === 'Escape') clearCanvas();
+  });
+</script>
+</body>
+</html>
