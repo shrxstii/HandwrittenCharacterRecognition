@@ -295,8 +295,6 @@ CodeAlpha Machine Learning Intern
 
 ---
 
-# 🌟 Internship Task
 
-This project was developed as part of the **CodeAlpha Machine Learning Internship Program**.
 
 ---
