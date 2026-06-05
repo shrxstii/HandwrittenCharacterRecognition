@@ -1,5 +1,5 @@
 # ✍️ Handwritten Character Recognition
-### CodeAlpha Machine Learning Internship — Task 3
+
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)
 ![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-orange?style=flat-square&logo=tensorflow)
